@@ -1,0 +1,37 @@
+# Dependencies
+front_end/node_modules/
+node_modules/
+
+# Production builds
+front_end/dist/
+dist/
+
+# Netlify local folders
+front_end/.netlify/
+.netlify/
+
+# Python Virtual Environments
+backend/venv/
+backend/.venv/
+venv/
+.venv/
+
+# Python Cache & compiled files
+backend/__pycache__/
+**/__pycache__/
+**/*.pyc
+
+# Local Credentials
+backend/.env
+.env
+
+# Large Binary ML Models (.pkl files)
+backend/models/*.pkl
+*.pkl
+
+# Local Logs & IDE files
+*.log
+.idea/
+.vscode/
+.system_generated/
+desktop.ini
