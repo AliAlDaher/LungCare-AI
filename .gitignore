@@ -30,6 +30,9 @@ backend/models/*.pkl
 backend/models/*.pkl.bak
 *.pkl
 *.pkl.bak
+!backend/models/best_stage_model.pkl
+!backend/models/best_survival_model.pkl
+!backend/models/stage_label_encoder.pkl
 
 # Local Logs & IDE files
 *.log
