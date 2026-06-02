@@ -1,9 +1,11 @@
-import React, { useState, useMemo, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Send } from 'lucide-react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { Send, User, AlertCircle } from 'lucide-react';
+import { requestPrediction } from '../services/predict';
 
-/* ──────────── types ──────────── */
+// Types
 interface FormData {
+  patientId?: string;
   age: string; gender: string; ethnicity: string; insurance: string;
   smokingHistory: string; packYears: string; familyHistory: string;
   tumorSize: string; location: string; ecog: string; treatment: string;
@@ -17,6 +19,7 @@ interface FormData {
 }
 
 const initialForm: FormData = {
+  patientId: '',
   age: '', gender: '', ethnicity: '', insurance: '',
   smokingHistory: '', packYears: '', familyHistory: '',
   tumorSize: '', location: '', ecog: '', treatment: '',
@@ -30,15 +33,15 @@ const initialForm: FormData = {
 };
 
 const sections = [
-  { id: 'demographics', label: 'Demographics' },
-  { id: 'risk', label: 'Risk Factors' },
-  { id: 'tumor', label: 'Tumor & Disease' },
-  { id: 'comorbidities', label: 'Comorbidities' },
+  { id: 'demographics', label: 'Patient Information' },
+  { id: 'risk', label: 'Lifestyle & Health Risks' },
+  { id: 'tumor', label: 'Tumor Details' },
+  { id: 'comorbidities', label: 'Pre-existing Conditions' },
   { id: 'vitals', label: 'Vital Signs' },
-  { id: 'labs', label: 'Lab Results' },
+  { id: 'labs', label: 'Blood Test Results' },
 ];
 
-/* ──────────── helpers ──────────── */
+// Helpers
 const sectionFields: Record<string, (keyof FormData)[]> = {
   demographics: ['age', 'gender', 'ethnicity', 'insurance'],
   risk: ['smokingHistory', 'packYears', 'familyHistory'],
@@ -59,61 +62,7 @@ function computeProgress(form: FormData): number {
   return Math.round((filled / allFields.length) * 100);
 }
 
-/* ──────────── Fallback simulation ──────────── */
-function simulatePrediction(form: FormData) {
-  const tumor = parseFloat(form.tumorSize) || 30;
-  const pack = parseFloat(form.packYears) || 10;
-  const age = parseFloat(form.age) || 55;
-  const ecog = parseInt(form.ecog) || 1;
-
-  let score = 0;
-  score += tumor < 20 ? 0 : tumor < 40 ? 1 : tumor < 60 ? 2 : 3;
-  score += pack < 10 ? 0 : pack < 30 ? 1 : 2;
-  score += age < 50 ? 0 : age < 65 ? 1 : 2;
-  score += ecog >= 3 ? 2 : ecog >= 2 ? 1 : 0;
-
-  const stages = ['I', 'II', 'III', 'IV'] as const;
-  let stageIdx = Math.min(3, Math.floor(score / 2.5));
-
-  // probabilities
-  const probs = { I: 0, II: 0, III: 0, IV: 0 };
-  const base = [0, 0, 0, 0];
-  base[stageIdx] = 0.5;
-  const remaining = 0.5;
-  for (let i = 0; i < 4; i++) {
-    if (i !== stageIdx) {
-      const dist = Math.abs(i - stageIdx);
-      base[i] = remaining * (dist === 1 ? 0.45 : dist === 2 ? 0.35 : 0.2) / (dist === 1 ? (stageIdx === 0 || stageIdx === 3 ? 1 : 2) : 1);
-    }
-  }
-  const sum = base.reduce((a, b) => a + b, 0);
-  stages.forEach((s, i) => { probs[s] = Math.round((base[i] / sum) * 1000) / 10; });
-
-  const survBase = [60, 42, 28, 12];
-  const survival = +(survBase[stageIdx] + (Math.random() * 10 - 5)).toFixed(1);
-
-  const importances = [
-    { name: 'Tumor Size', val: +(0.18 + Math.random() * 0.08).toFixed(3) },
-    { name: 'Pack-Years', val: +(0.14 + Math.random() * 0.06).toFixed(3) },
-    { name: 'Age', val: +(0.12 + Math.random() * 0.05).toFixed(3) },
-    { name: 'ECOG Status', val: +(0.10 + Math.random() * 0.05).toFixed(3) },
-    { name: 'Albumin', val: +(0.07 + Math.random() * 0.04).toFixed(3) },
-    { name: 'Hemoglobin', val: +(0.05 + Math.random() * 0.04).toFixed(3) },
-    { name: 'LDH', val: +(0.04 + Math.random() * 0.03).toFixed(3) },
-    { name: 'Smoking History', val: +(0.03 + Math.random() * 0.03).toFixed(3) },
-  ].sort((a, b) => b.val - a.val);
-
-  return {
-    predicted_stage: stages[stageIdx],
-    stage_probabilities: probs,
-    predicted_survival_months: survival,
-    feature_importances: importances,
-    model_version: 'client-sim-v1',
-    simulated: true,
-  };
-}
-
-/* ──────────── Input helpers ──────────── */
+// Input helpers
 const Field: React.FC<{
   label: string;
   name: keyof FormData;
@@ -169,12 +118,27 @@ const Toggle: React.FC<{
   </div>
 );
 
-/* ──────────── COMPONENT ──────────── */
+// Main component
 const PredictPatient: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [form, setForm] = useState<FormData>(initialForm);
   const [activeSection, setActiveSection] = useState('demographics');
   const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  // Apply prefill if navigating from Patients roster page
+  useEffect(() => {
+    const prefill = location.state?.prefillPatient;
+    if (prefill) {
+      setForm(prev => ({
+        ...prev,
+        patientId: prefill.patientId,
+        age: prefill.age || '',
+        gender: prefill.gender || ''
+      }));
+    }
+  }, [location.state]);
 
   const progress = useMemo(() => computeProgress(form), [form]);
 
@@ -190,21 +154,15 @@ const PredictPatient: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
+    setSubmitError(null);
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch('http://localhost:5174/predict', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-        signal: controller.signal,
-      });
+      const timeout = setTimeout(() => controller.abort(), 15000);
+      const data = await requestPrediction(form, controller.signal);
       clearTimeout(timeout);
-      const data = await res.json();
       navigate('/results', { state: { prediction: data, formData: form } });
     } catch {
-      const simulated = simulatePrediction(form);
-      navigate('/results', { state: { prediction: simulated, formData: form } });
+      setSubmitError('Could not reach the prediction server. Please check that the backend is running and try again.');
     } finally {
       setSubmitting(false);
     }
@@ -266,41 +224,101 @@ const PredictPatient: React.FC = () => {
       {/* Form */}
       <form onSubmit={handleSubmit} style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 28 }}>
 
+        {submitError && (
+          <div style={{
+            background: 'rgba(255,107,107,0.1)',
+            border: '1px solid rgba(255,107,107,0.25)',
+            borderRadius: 12,
+            padding: '12px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            fontSize: '0.85rem',
+            color: 'var(--coral)',
+            fontWeight: 600,
+            animation: 'fadeInUp 0.3s ease forwards'
+          }}>
+            <AlertCircle size={16} />
+            {submitError}
+          </div>
+        )}
+
+        {form.patientId && (
+          <div style={{
+            background: 'rgba(0, 201, 177, 0.08)',
+            border: '1px solid rgba(0, 201, 177, 0.25)',
+            borderRadius: 12,
+            padding: '12px 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            fontSize: '0.85rem',
+            color: '#fff',
+            animation: 'fadeInUp 0.3s ease forwards'
+          }}>
+            <User size={16} color="var(--teal)" />
+            <div style={{ flex: 1 }}>
+              Linked to: <strong style={{ color: 'var(--teal)' }}>{location.state?.prefillPatient?.name || 'Selected Patient'}</strong> (ID: {form.patientId})
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setForm(prev => ({ ...prev, patientId: '' }));
+              }}
+              style={{
+                background: 'rgba(255,255,255,0.03)',
+                border: '1px solid rgba(255,255,255,0.06)',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                fontSize: '0.74rem',
+                fontWeight: 700,
+                padding: '4px 10px',
+                borderRadius: 6,
+                transition: 'all 0.2s'
+              }}
+              onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+              onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; e.currentTarget.style.background = 'rgba(255,255,255,0.03)'; }}
+            >
+              Clear
+            </button>
+          </div>
+        )}
+
         {/* Demographics */}
         <section id="demographics" className="card" onFocus={() => setActiveSection('demographics')}>
-          <p className="section-title">Demographics</p>
+          <p className="section-title">Patient Information</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
-            <Field label="Age" name="age" form={form} onChange={handleChange} type="number" placeholder="e.g. 58" />
+            <Field label="Age (Years)" name="age" form={form} onChange={handleChange} type="number" placeholder="e.g. 58" />
             <Select label="Gender" name="gender" form={form} onChange={handleChange} options={['Male', 'Female']} />
             <Select label="Ethnicity" name="ethnicity" form={form} onChange={handleChange} options={['Caucasian', 'African American', 'Hispanic', 'Asian', 'Other']} />
-            <Select label="Insurance Type" name="insurance" form={form} onChange={handleChange} options={['Private', 'Medicare', 'Medicaid', 'Uninsured']} />
+            <Select label="Insurance Plan Type" name="insurance" form={form} onChange={handleChange} options={['Private', 'Medicare', 'Medicaid', 'Uninsured']} />
           </div>
         </section>
 
         {/* Risk Factors */}
         <section id="risk" className="card" onFocus={() => setActiveSection('risk')}>
-          <p className="section-title">Risk Factors</p>
+          <p className="section-title">Lifestyle & Health Risks</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
             <Select label="Smoking History" name="smokingHistory" form={form} onChange={handleChange} options={['Never', 'Former', 'Current']} />
-            <Field label="Pack-Years" name="packYears" form={form} onChange={handleChange} type="number" placeholder="e.g. 20" />
-            <Select label="Family History" name="familyHistory" form={form} onChange={handleChange} options={['Yes', 'No']} />
+            <Field label="Smoking Exposure (Pack-Years)" name="packYears" form={form} onChange={handleChange} type="number" placeholder="e.g. 20" />
+            <Select label="Family History of Cancer" name="familyHistory" form={form} onChange={handleChange} options={['Yes', 'No']} />
           </div>
         </section>
 
         {/* Tumor & Disease */}
         <section id="tumor" className="card" onFocus={() => setActiveSection('tumor')}>
-          <p className="section-title">Tumor & Disease</p>
+          <p className="section-title">Tumor Details</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
-            <Field label="Tumor Size (mm)" name="tumorSize" form={form} onChange={handleChange} type="number" placeholder="e.g. 35" />
+            <Field label="Tumor Size (in millimeters)" name="tumorSize" form={form} onChange={handleChange} type="number" placeholder="e.g. 35" />
             <Select label="Tumor Location" name="location" form={form} onChange={handleChange} options={['Upper Lobe', 'Middle Lobe', 'Lower Lobe', 'Main Bronchus']} />
-            <Select label="ECOG Performance Status" name="ecog" form={form} onChange={handleChange} options={['0', '1', '2', '3', '4']} />
-            <Select label="Treatment" name="treatment" form={form} onChange={handleChange} options={['Surgery', 'Chemotherapy', 'Radiation', 'Targeted Therapy', 'Immunotherapy', 'Combined']} />
+            <Select label="Physical Activity Level (ECOG)" name="ecog" form={form} onChange={handleChange} options={['0 - Fully Active', '1 - Restricted Strenuous Work', '2 - Capable of Self-Care', '3 - Limited Self-Care', '4 - Completely Bedridden']} />
+            <Select label="Treatment Method" name="treatment" form={form} onChange={handleChange} options={['Surgery', 'Chemotherapy', 'Radiation', 'Targeted Therapy', 'Immunotherapy', 'Combined']} />
           </div>
         </section>
 
         {/* Comorbidities */}
         <section id="comorbidities" className="card" onFocus={() => setActiveSection('comorbidities')}>
-          <p className="section-title">Comorbidities</p>
+          <p className="section-title">Pre-existing Chronic Conditions</p>
           <div style={{ maxWidth: 400 }}>
             <Toggle label="Diabetes" name="diabetes" checked={form.diabetes} onChange={(n, v) => handleChange(n, v)} />
             <Toggle label="Hypertension" name="hypertension" checked={form.hypertension} onChange={(n, v) => handleChange(n, v)} />
@@ -316,30 +334,30 @@ const PredictPatient: React.FC = () => {
         <section id="vitals" className="card" onFocus={() => setActiveSection('vitals')}>
           <p className="section-title">Vital Signs</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: 16 }}>
-            <Field label="Systolic BP" name="systolicBP" form={form} onChange={handleChange} type="number" placeholder="e.g. 120" />
-            <Field label="Diastolic BP" name="diastolicBP" form={form} onChange={handleChange} type="number" placeholder="e.g. 80" />
-            <Field label="Pulse (bpm)" name="pulse" form={form} onChange={handleChange} type="number" placeholder="e.g. 72" />
+            <Field label="Systolic BP (Pressure - top number)" name="systolicBP" form={form} onChange={handleChange} type="number" placeholder="e.g. 120" />
+            <Field label="Diastolic BP (Pressure - bottom number)" name="diastolicBP" form={form} onChange={handleChange} type="number" placeholder="e.g. 80" />
+            <Field label="Pulse (Beats per minute)" name="pulse" form={form} onChange={handleChange} type="number" placeholder="e.g. 72" />
           </div>
         </section>
 
         {/* Lab Results */}
         <section id="labs" className="card" onFocus={() => setActiveSection('labs')}>
-          <p className="section-title">Lab Results</p>
+          <p className="section-title">Blood Test Results</p>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 16 }}>
-            <Field label="Hemoglobin (g/dL)" name="hemoglobin" form={form} onChange={handleChange} type="number" placeholder="13.5" />
-            <Field label="WBC (×10³/µL)" name="wbc" form={form} onChange={handleChange} type="number" placeholder="7.0" />
-            <Field label="Platelets (×10³/µL)" name="platelets" form={form} onChange={handleChange} type="number" placeholder="250" />
-            <Field label="Albumin (g/dL)" name="albumin" form={form} onChange={handleChange} type="number" placeholder="4.0" />
-            <Field label="ALP (U/L)" name="alp" form={form} onChange={handleChange} type="number" placeholder="70" />
-            <Field label="ALT (U/L)" name="alt" form={form} onChange={handleChange} type="number" placeholder="25" />
-            <Field label="AST (U/L)" name="ast" form={form} onChange={handleChange} type="number" placeholder="28" />
-            <Field label="Creatinine (mg/dL)" name="creatinine" form={form} onChange={handleChange} type="number" placeholder="1.0" />
-            <Field label="LDH (U/L)" name="ldh" form={form} onChange={handleChange} type="number" placeholder="200" />
-            <Field label="Calcium (mg/dL)" name="calcium" form={form} onChange={handleChange} type="number" placeholder="9.5" />
-            <Field label="Glucose (mg/dL)" name="glucose" form={form} onChange={handleChange} type="number" placeholder="100" />
-            <Field label="Sodium (mEq/L)" name="sodium" form={form} onChange={handleChange} type="number" placeholder="140" />
-            <Field label="Potassium (mEq/L)" name="potassium" form={form} onChange={handleChange} type="number" placeholder="4.2" />
-            <Field label="Phosphorus (mg/dL)" name="phosphorus" form={form} onChange={handleChange} type="number" placeholder="3.5" />
+            <Field label="Hemoglobin (Oxygen delivery)" name="hemoglobin" form={form} onChange={handleChange} type="number" placeholder="13.5" />
+            <Field label="White Blood Cells (Immune cells)" name="wbc" form={form} onChange={handleChange} type="number" placeholder="7.0" />
+            <Field label="Platelet Count (Blood clotting)" name="platelets" form={form} onChange={handleChange} type="number" placeholder="250" />
+            <Field label="Albumin (Liver/kidney protein)" name="albumin" form={form} onChange={handleChange} type="number" placeholder="4.0" />
+            <Field label="ALP (Liver enzyme test)" name="alp" form={form} onChange={handleChange} type="number" placeholder="70" />
+            <Field label="ALT (Liver damage check)" name="alt" form={form} onChange={handleChange} type="number" placeholder="25" />
+            <Field label="AST (Cell health marker)" name="ast" form={form} onChange={handleChange} type="number" placeholder="28" />
+            <Field label="Creatinine (Kidney filter test)" name="creatinine" form={form} onChange={handleChange} type="number" placeholder="1.0" />
+            <Field label="LDH (Tissue health test)" name="ldh" form={form} onChange={handleChange} type="number" placeholder="200" />
+            <Field label="Calcium (Bone & nerve test)" name="calcium" form={form} onChange={handleChange} type="number" placeholder="9.5" />
+            <Field label="Glucose (Blood sugar level)" name="glucose" form={form} onChange={handleChange} type="number" placeholder="100" />
+            <Field label="Sodium (Hydration level)" name="sodium" form={form} onChange={handleChange} type="number" placeholder="140" />
+            <Field label="Potassium (Heart rhythm check)" name="potassium" form={form} onChange={handleChange} type="number" placeholder="4.2" />
+            <Field label="Phosphorus (Bone energy test)" name="phosphorus" form={form} onChange={handleChange} type="number" placeholder="3.5" />
           </div>
         </section>
 

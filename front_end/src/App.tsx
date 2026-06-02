@@ -6,8 +6,10 @@ import PredictPatient from './pages/PredictPatient';
 import Results from './pages/Results';
 import AnalyticsDashboard from './pages/AnalyticsDashboard';
 import Login from './pages/Login';
+import Patients from './pages/Patients';
+import { apiRequest } from './services/api';
 
-/* ──────────── Auth Context ──────────── */
+// Auth context
 export type Role = 'doctor' | 'patient';
 
 export interface UserData {
@@ -18,8 +20,8 @@ export interface UserData {
 
 interface AuthContextType {
   user: UserData | null;
-  login: (email: string, password: string, role: Role) => boolean;
-  signup: (name: string, email: string, password: string, role: Role) => boolean;
+  login: (email: string, password: string, role: Role) => Promise<boolean>;
+  signup: (name: string, email: string, password: string, role: Role) => Promise<boolean>;
   logout: () => void;
 }
 
@@ -37,24 +39,43 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
     return saved ? JSON.parse(saved) : null;
   });
 
-  const login = useCallback((email: string, _password: string, role: Role) => {
-    if (!email.trim()) return false;
-    const u: UserData = { name: email.split('@')[0], email, role };
-    setUser(u);
-    localStorage.setItem('lungcare_user', JSON.stringify(u));
-    return true;
+  const login = useCallback(async (email: string, password: string, role: Role) => {
+    if (!email.trim() || !password.trim()) return false;
+    try {
+      const data = await apiRequest<{ token: string; user: UserData }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email, password, role }),
+      });
+      setUser(data.user);
+      localStorage.setItem('lungcare_token', data.token);
+      localStorage.setItem('lungcare_user', JSON.stringify(data.user));
+      return true;
+    } catch (err) {
+      console.error('Login error:', err);
+      throw err;
+    }
   }, []);
 
-  const signup = useCallback((name: string, email: string, _password: string, role: Role) => {
-    if (!email.trim() || !name.trim()) return false;
-    const u: UserData = { name, email, role };
-    setUser(u);
-    localStorage.setItem('lungcare_user', JSON.stringify(u));
-    return true;
+  const signup = useCallback(async (name: string, email: string, password: string, role: Role) => {
+    if (!email.trim() || !name.trim() || !password.trim()) return false;
+    try {
+      const data = await apiRequest<{ token: string; user: UserData }>('/api/auth/signup', {
+        method: 'POST',
+        body: JSON.stringify({ name, email, password, role }),
+      });
+      setUser(data.user);
+      localStorage.setItem('lungcare_token', data.token);
+      localStorage.setItem('lungcare_user', JSON.stringify(data.user));
+      return true;
+    } catch (err) {
+      console.error('Signup error:', err);
+      throw err;
+    }
   }, []);
 
   const logout = useCallback(() => {
     setUser(null);
+    localStorage.removeItem('lungcare_token');
     localStorage.removeItem('lungcare_user');
   }, []);
 
@@ -65,14 +86,14 @@ function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ──────────── Protected Route ──────────── */
+// Protected route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
-/* ──────────── NavLink ──────────── */
+// NavLink helper
 const NavLink: React.FC<{ to: string; children: React.ReactNode }> = ({ to, children }) => {
   const location = useLocation();
   const isActive = location.pathname === to;
@@ -83,7 +104,7 @@ const NavLink: React.FC<{ to: string; children: React.ReactNode }> = ({ to, chil
   );
 };
 
-/* ──────────── Role Badge ──────────── */
+// Role badge config
 const roleMeta: Record<Role, { label: string; icon: React.ReactNode; color: string; bg: string; border: string }> = {
   doctor: {
     label: 'Doctor',
@@ -101,7 +122,7 @@ const roleMeta: Record<Role, { label: string; icon: React.ReactNode; color: stri
   },
 };
 
-/* ──────────── NavBar ──────────── */
+// NavBar
 const NavBar: React.FC = () => {
   const { user, logout } = useAuth();
   const location = useLocation();
@@ -120,6 +141,7 @@ const NavBar: React.FC = () => {
       <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <div className="navbar-links">
           <NavLink to="/">Home</NavLink>
+          {user.role === 'doctor' && <NavLink to="/patients">Patients</NavLink>}
           <NavLink to="/predict">Predict</NavLink>
           <NavLink to="/analytics">Analytics</NavLink>
         </div>
@@ -167,13 +189,14 @@ const NavBar: React.FC = () => {
   );
 };
 
-/* ──────────── App Content ──────────── */
+// App content
 const AppContent: React.FC = () => (
   <>
     <NavBar />
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/" element={<ProtectedRoute><Home /></ProtectedRoute>} />
+      <Route path="/patients" element={<ProtectedRoute><Patients /></ProtectedRoute>} />
       <Route path="/predict" element={<ProtectedRoute><PredictPatient /></ProtectedRoute>} />
       <Route path="/results" element={<ProtectedRoute><Results /></ProtectedRoute>} />
       <Route path="/analytics" element={<ProtectedRoute><AnalyticsDashboard /></ProtectedRoute>} />

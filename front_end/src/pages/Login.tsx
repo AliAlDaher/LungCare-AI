@@ -20,7 +20,7 @@ const Login: React.FC = () => {
     return <Navigate to="/" replace />;
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
@@ -38,18 +38,22 @@ const Login: React.FC = () => {
     }
 
     setLoading(true);
-    setTimeout(() => {
+    try {
       const success = mode === 'login'
-        ? login(email, password, role)
-        : signup(name, email, password, role);
+        ? await login(email, password, role)
+        : await signup(name, email, password, role);
 
       if (success) {
         navigate('/', { replace: true });
       } else {
-        setError('Authentication failed. Please try again.');
+        setError('Authentication failed. Please check your credentials.');
       }
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || 'Authentication failed. Please check your network connection.');
+    } finally {
       setLoading(false);
-    }, 600);
+    }
   };
 
   const roles: { value: Role; label: string; icon: React.ReactNode; desc: string }[] = [

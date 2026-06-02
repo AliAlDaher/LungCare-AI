@@ -5,14 +5,13 @@ import {
   Activity, TrendingUp, Lightbulb, FileDown, Printer, Copy, ClipboardList, ArrowLeft
 } from 'lucide-react';
 
-/* ──────────── types ──────────── */
+// Types
 interface Prediction {
   predicted_stage: string;
   stage_probabilities: Record<string, number>;
   predicted_survival_months: number;
   feature_importances: { name: string; val: number }[];
   model_version: string;
-  simulated: boolean;
 }
 
 const stageColors: Record<string, string> = {
@@ -20,9 +19,9 @@ const stageColors: Record<string, string> = {
 };
 
 function riskBadge(months: number) {
-  if (months >= 40) return { label: 'Good', cls: 'badge-mint' };
-  if (months >= 20) return { label: 'Moderate', cls: 'badge-amber' };
-  return { label: 'Poor', cls: 'badge-coral' };
+  if (months >= 40) return { label: 'Favorable', cls: 'badge-mint' };
+  if (months >= 20) return { label: 'Intermediate', cls: 'badge-amber' };
+  return { label: 'Guarded', cls: 'badge-coral' };
 }
 
 const keyLabels: Record<string, string> = {
@@ -31,7 +30,7 @@ const keyLabels: Record<string, string> = {
   tumorSize: 'Tumor Size', location: 'Location', ecog: 'ECOG', treatment: 'Treatment',
 };
 
-/* ──────────── COMPONENT ──────────── */
+// Main component
 const Results: React.FC = () => {
   const { state } = useLocation() as { state: { prediction: Prediction; formData: Record<string, unknown> } | null };
   const navigate = useNavigate();
@@ -52,7 +51,7 @@ const Results: React.FC = () => {
   const risk = riskBadge(prediction.predicted_survival_months);
   const maxImportance = Math.max(...prediction.feature_importances.map(f => f.val));
 
-  /* ──── Export helpers ──── */
+  // Export helpers
   const handleCopyJSON = () => {
     navigator.clipboard.writeText(JSON.stringify(prediction, null, 2));
     alert('JSON copied to clipboard!');
@@ -67,7 +66,7 @@ h1{color:#0f172a}table{width:100%;border-collapse:collapse;margin:1rem 0}
 td,th{border:1px solid #e2e8f0;padding:8px 12px;text-align:left}
 th{background:#f8fafc}.bar{height:20px;background:#0ea5e9;border-radius:4px}</style></head>
 <body><h1>LungCare AI — Prediction Report</h1>
-<p><strong>Model:</strong> ${prediction.model_version} ${prediction.simulated ? '(Simulated)' : ''}</p>
+<p><strong>Model:</strong> ${prediction.model_version}</p>
 <h2>Predicted Stage: ${prediction.predicted_stage}</h2>
 <table><tr><th>Stage</th><th>Probability</th></tr>
 ${Object.entries(prediction.stage_probabilities).map(([s, p]) => `<tr><td>${s}</td><td>${p}%</td></tr>`).join('')}
@@ -95,28 +94,13 @@ ${prediction.feature_importances.map(f => `<tr><td>${f.name}</td><td>${f.val}</t
         <ArrowLeft size={16}/> New Prediction
       </button>
 
-      {prediction.simulated && (
-        <div style={{
-          background: 'rgba(255,179,71,0.1)',
-          border: '1px solid rgba(255,179,71,0.25)',
-          borderRadius: 10,
-          padding: '10px 16px',
-          marginBottom: 20,
-          fontSize: '0.82rem',
-          color: 'var(--amber)',
-          fontWeight: 600,
-        }}>
-          ⚠ Backend unreachable — showing client-side simulated prediction.
-        </div>
-      )}
-
       <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
         {/* Panel 1: Input Summary */}
         <div className="card" style={{ animation: 'fadeInUp 0.4s ease forwards' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
             <ClipboardList size={18} style={{ color: 'var(--text-muted)' }} />
-            <span className="section-title" style={{ margin: 0 }}>Input Summary</span>
+            <span className="section-title" style={{ margin: 0 }}>Patient Input Summary</span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
             {summaryEntries.map(([label, val]) => (
@@ -192,7 +176,7 @@ ${prediction.feature_importances.map(f => `<tr><td>${f.name}</td><td>${f.val}</t
             <div className="card" style={{ animation: 'fadeInUp 0.55s ease forwards' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
                 <TrendingUp size={18} style={{ color: 'var(--text-muted)' }} />
-                <span className="section-title" style={{ margin: 0 }}>Predicted Survival</span>
+                <span className="section-title" style={{ margin: 0 }}>Survival Estimate</span>
               </div>
               <div style={{ textAlign: 'center', marginBottom: 16 }}>
                 <span style={{ fontSize: '2.8rem', fontWeight: 900, letterSpacing: -2, color: 'var(--text-primary)' }}>
@@ -250,10 +234,10 @@ ${prediction.feature_importances.map(f => `<tr><td>${f.name}</td><td>${f.val}</t
                 <ClipboardList size={24} />
               </div>
               <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--text-primary)', marginBottom: 8, letterSpacing: -0.4 }}>
-                Clinical Prognosis Summary
+                Prediction Summary
               </h3>
               <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.6, maxWidth: 320, marginBottom: 16 }}>
-                Survival projections and progression curves are sensitive clinical estimations. To ensure comprehensive medical context, these indices are shared exclusively with your attending oncologist.
+              Survival data is restricted to physician accounts. Please consult your doctor for detailed prognosis information.
               </p>
               <div style={{
                 fontSize: '0.72rem',
@@ -266,7 +250,7 @@ ${prediction.feature_importances.map(f => `<tr><td>${f.name}</td><td>${f.val}</t
                 textTransform: 'uppercase',
                 letterSpacing: 0.5
               }}>
-                Consult Your Attending Physician
+                Ask Your Doctor
               </div>
             </div>
           )}
@@ -276,7 +260,7 @@ ${prediction.feature_importances.map(f => `<tr><td>${f.name}</td><td>${f.val}</t
         <div className="card" style={{ animation: 'fadeInUp 0.6s ease forwards' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
             <Lightbulb size={18} style={{ color: 'var(--text-muted)' }} />
-            <span className="section-title" style={{ margin: 0 }}>Feature Importance — Top {prediction.feature_importances.length}</span>
+            <span className="section-title" style={{ margin: 0 }}>Key Factors</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {prediction.feature_importances.map((f, i) => {

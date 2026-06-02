@@ -27,7 +27,9 @@ backend/.env
 
 # Large Binary ML Models (.pkl files)
 backend/models/*.pkl
+backend/models/*.pkl.bak
 *.pkl
+*.pkl.bak
 
 # Local Logs & IDE files
 *.log

@@ -16,7 +16,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import LabelEncoder, OneHotEncoder, StandardScaler
-from sklearn.ensemble import (ExtraTreesClassifier, ExtraTreesRegressor, GradientBoostingClassifier, GradientBoostingRegressor, RandomForestClassifier, RandomForestRegressor,)
+from sklearn.ensemble import (ExtraTreesClassifier, ExtraTreesRegressor, GradientBoostingClassifier, GradientBoostingRegressor, RandomForestClassifier, RandomForestRegressor, HistGradientBoostingRegressor,)
 
 # Ensure models directory exists
 os.makedirs('models', exist_ok=True)
@@ -111,6 +111,7 @@ regression_models = {
         n_jobs=-1
     ),
     'GradientBoostingRegressor': GradientBoostingRegressor(random_state=42),
+    'HistGradientBoostingRegressor': HistGradientBoostingRegressor(random_state=42),
 }
 
 regression_results = []
